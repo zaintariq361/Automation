@@ -1,0 +1,299 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ---------------------------------------------------------------------------
+// Multi-tenant core
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users              User[]
+  customers          Customer[]
+  conversations      Conversation[]
+  messages           Message[]
+  knowledgeDocuments KnowledgeDocument[]
+  knowledgeChunks    KnowledgeChunk[]
+  products           Product[]
+  orders             Order[]
+  integrations       Integration[]
+
+  @@map("tenants")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  AGENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String
+  name         String
+  passwordHash String
+  role         UserRole @default(AGENT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedConversations Conversation[] @relation("AssignedAgent")
+  internalNotes         InternalNote[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Customers & conversations (unified inbox)
+// ---------------------------------------------------------------------------
+
+enum Channel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channel       Channel
+  externalId    String // phone number (WhatsApp) or PSID/IGSID (Meta)
+  name          String?
+  phone         String?
+  tags          String[] @default([])
+  churnScore    Float?
+  lifetimeValue Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  conversations Conversation[]
+  orders        Order[]
+
+  @@unique([tenantId, channel, externalId])
+  @@map("customers")
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  HANDED_OFF
+  CLOSED
+}
+
+model Conversation {
+  id              String             @id @default(cuid())
+  tenantId        String
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerId      String
+  customer        Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel         Channel
+  status          ConversationStatus @default(OPEN)
+  aiEnabled       Boolean            @default(true)
+  assignedAgentId String?
+  assignedAgent   User?              @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  lastMessageAt   DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  messages       Message[]
+  internalNotes  InternalNote[]
+  handoffEvents  HandoffEvent[]
+  orders         Order[]
+
+  @@index([tenantId, status])
+  @@map("conversations")
+}
+
+enum MessageSender {
+  CUSTOMER
+  AI
+  AGENT
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  ORDER
+  PRODUCT
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         MessageSender
+  senderId       String?
+  type           MessageType   @default(TEXT)
+  content        String
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model InternalNote {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         User         @relation(fields: [authorId], references: [id])
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@map("internal_notes")
+}
+
+enum HandoffReason {
+  AI_LOW_CONFIDENCE
+  CUSTOMER_REQUESTED
+  AGENT_TOOL_CALL
+  ESCALATION_KEYWORD
+  MANUAL
+}
+
+model HandoffEvent {
+  id             String        @id @default(cuid())
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  reason         HandoffReason
+  fromAi         Boolean       @default(true)
+  toAgentId      String?
+  note           String?
+  createdAt      DateTime      @default(now())
+
+  @@map("handoff_events")
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge base (RAG)
+// ---------------------------------------------------------------------------
+
+model KnowledgeDocument {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title      String
+  sourceType String // faq | policy | product | manual | menu
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  chunks KnowledgeChunk[]
+
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String                       @id @default(cuid())
+  tenantId   String
+  tenant     Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documentId String
+  document   KnowledgeDocument            @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String
+  embedding  Unsupported("vector(1024)")?
+  tokenCount Int                          @default(0)
+  createdAt  DateTime                     @default(now())
+
+  @@index([tenantId])
+  @@map("knowledge_chunks")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog & commerce
+// ---------------------------------------------------------------------------
+
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalId  String // Shopify product id
+  title       String
+  description String?
+  price       Decimal  @db.Decimal(12, 2)
+  currency    String   @default("USD")
+  imageUrl    String?
+  variants    Json?
+  inventory   Int      @default(0)
+  syncedAt    DateTime @default(now())
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, title])
+  @@map("products")
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_PAYMENT
+  CONFIRMED
+  FULFILLED
+  CANCELLED
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  status         OrderStatus   @default(DRAFT)
+  items          Json
+  total          Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("orders")
+}
+
+// ---------------------------------------------------------------------------
+// Integrations
+// ---------------------------------------------------------------------------
+
+enum IntegrationType {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  SHOPIFY
+}
+
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+model Integration {
+  id        String            @id @default(cuid())
+  tenantId  String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      IntegrationType
+  status    IntegrationStatus @default(DISCONNECTED)
+  config    Json              @default("{}")
+  updatedAt DateTime          @updatedAt
+  createdAt DateTime          @default(now())
+
+  @@unique([tenantId, type])
+  @@map("integrations")
+}
