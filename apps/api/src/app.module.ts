@@ -15,6 +15,9 @@ import { EngineModule } from "./engine/engine.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 import { ConversationsModule } from "./conversations/conversations.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
+import { TenantsModule } from "./tenants/tenants.module";
+import { OnboardingModule } from "./onboarding/onboarding.module";
+import { IntegrationTestsModule } from "./integration-tests/integration-tests.module";
 
 @Module({
   imports: [
@@ -34,6 +37,9 @@ import { AnalyticsModule } from "./analytics/analytics.module";
     WhatsappModule,
     ConversationsModule,
     AnalyticsModule,
+    TenantsModule,
+    OnboardingModule,
+    IntegrationTestsModule,
   ],
 })
 export class AppModule {}

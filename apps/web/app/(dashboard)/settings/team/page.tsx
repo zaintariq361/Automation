@@ -3,13 +3,15 @@
 import { useEffect, useState, FormEvent } from "react";
 import { UserDTO } from "@conviyo/shared";
 import { api, ApiError } from "../../../../lib/api";
+import { useToast } from "../../../../lib/toast-context";
 
 export default function TeamPage() {
+  const { toast } = useToast();
   const [users, setUsers] = useState<UserDTO[]>([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [inviting, setInviting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [credentialBanner, setCredentialBanner] = useState<string | null>(null);
 
   function load() {
     api.get<UserDTO[]>("/users").then(setUsers);
@@ -20,15 +22,15 @@ export default function TeamPage() {
   async function invite(e: FormEvent) {
     e.preventDefault();
     setInviting(true);
-    setMessage(null);
+    setCredentialBanner(null);
     try {
       const res = await api.post<{ user: UserDTO; temporaryPassword: string }>("/users/invite", { name, email });
-      setMessage(`Invited ${res.user.email}. Temporary password: ${res.temporaryPassword}`);
+      setCredentialBanner(`Invited ${res.user.email}. Temporary password: ${res.temporaryPassword}`);
       setName("");
       setEmail("");
       load();
     } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Invite failed");
+      toast(err instanceof ApiError ? err.message : "Invite failed", "error");
     } finally {
       setInviting(false);
     }
@@ -64,7 +66,9 @@ export default function TeamPage() {
         </button>
       </form>
 
-      {message && <p className="mt-3 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">{message}</p>}
+      {credentialBanner && (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{credentialBanner}</p>
+      )}
 
       <div className="mt-6 space-y-2">
         {users.map((u) => (

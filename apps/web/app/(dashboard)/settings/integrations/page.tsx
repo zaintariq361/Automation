@@ -2,7 +2,9 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { IntegrationDTO } from "@conviyo/shared";
-import { api } from "../../../../lib/api";
+import { api, ApiError } from "../../../../lib/api";
+import { useToast } from "../../../../lib/toast-context";
+import { useI18n } from "../../../../lib/i18n";
 
 const INTEGRATIONS: Array<{
   type: string;
@@ -65,19 +67,37 @@ function IntegrationCard({
   existing?: IntegrationDTO;
   onSaved: () => void;
 }) {
+  const { toast } = useToast();
+  const { t } = useI18n();
   const [values, setValues] = useState<Record<string, string>>(
     () => (existing?.config as Record<string, string>) ?? {},
   );
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
       await api.put(`/integrations/${def.type}`, { config: values });
+      toast(`${def.label} settings saved.`, "success");
       onSaved();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Failed to save integration", "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    try {
+      const res = await api.post<{ ok: boolean; message: string }>(`/integrations/${def.type}/test`);
+      toast(res.message, res.ok ? "success" : "error");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Connection test failed", "error");
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -106,13 +126,23 @@ function IntegrationCard({
         </div>
       ))}
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-      >
-        {saving ? "Saving…" : "Save"}
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+        >
+          {saving ? `${t("common.loading")}` : t("common.save")}
+        </button>
+        <button
+          type="button"
+          onClick={testConnection}
+          disabled={testing || !existing}
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+        >
+          {testing ? t("common.loading") : t("common.testConnection")}
+        </button>
+      </div>
     </form>
   );
 }

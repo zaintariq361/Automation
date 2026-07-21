@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import Anthropic from "@anthropic-ai/sdk";
 import { HandoffReason } from "@prisma/client";
+import { ONBOARDING_TEMPLATES, LANGUAGE_LABELS, SupportedLanguage } from "@conviyo/shared";
 import { AnthropicService } from "./anthropic.service";
 import { AGENT_TOOLS } from "./tools/tool-definitions";
 import { ProductsService } from "../catalog/products.service";
@@ -20,6 +21,8 @@ export interface AgentContext {
   conversationId: string;
   customerId: string;
   currency: string;
+  industry?: string | null;
+  defaultLanguage?: string | null;
 }
 
 export interface AgentResult {
@@ -32,7 +35,16 @@ const MAX_TOOL_ITERATIONS = 5;
 const FALLBACK_REPLY =
   "Thanks for your message! I'm not able to process that automatically right now — let me connect you with a member of our team.";
 
-const SYSTEM_PROMPT = (tenantName: string) => `You are the AI sales and support agent for ${tenantName}, operating inside a WhatsApp/Instagram/Messenger conversation.
+function buildSystemPrompt(ctx: AgentContext): string {
+  const template = ctx.industry ? ONBOARDING_TEMPLATES.find((t) => t.id === ctx.industry) : undefined;
+  const tone = template?.agentTone ?? "You're helpful, professional, and concise.";
+  const languageLabel = LANGUAGE_LABELS[(ctx.defaultLanguage as SupportedLanguage) ?? "en"] ?? "English";
+
+  return `You are the AI sales and support agent for ${ctx.tenantName}, operating inside a WhatsApp/Instagram/Messenger conversation.
+
+Tone: ${tone}
+
+Language: Default to ${languageLabel}, but if the customer writes in a different language, mirror their language instead — always match the customer.
 
 Your job:
 - Answer questions using the knowledge base (search_knowledge_base) and product catalog (search_catalog) tools — never invent product names, prices, or policies.
@@ -40,6 +52,7 @@ Your job:
 - Keep replies short, warm, and conversational — this is a chat, not an email.
 - If you cannot help, or the customer asks for a human, or the request involves a complaint/refund, call handoff_to_human.
 - Never claim to have taken an action (like creating an order) unless you actually called the corresponding tool.`;
+}
 
 @Injectable()
 export class AgentService {
@@ -75,7 +88,7 @@ export class AgentService {
       const response = await client.messages.create({
         model,
         max_tokens: 1024,
-        system: SYSTEM_PROMPT(ctx.tenantName),
+        system: buildSystemPrompt(ctx),
         tools: AGENT_TOOLS,
         messages,
       });

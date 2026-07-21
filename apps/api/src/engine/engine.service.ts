@@ -87,7 +87,15 @@ export class EngineService {
     ]);
 
     const result = await this.agent.generateReply(
-      { tenantId, tenantName: tenant.name, conversationId, customerId, currency: "USD" },
+      {
+        tenantId,
+        tenantName: tenant.name,
+        conversationId,
+        customerId,
+        currency: "USD",
+        industry: tenant.industry,
+        defaultLanguage: tenant.defaultLanguage,
+      },
       history,
     );
 

@@ -20,7 +20,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/inbox");
+      router.push("/overview");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {

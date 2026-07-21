@@ -8,6 +8,6 @@ import { CatalogController } from "./catalog.controller";
   imports: [IntegrationsModule],
   controllers: [CatalogController],
   providers: [ShopifyClientService, ProductsService],
-  exports: [ProductsService],
+  exports: [ProductsService, ShopifyClientService],
 })
 export class CatalogModule {}

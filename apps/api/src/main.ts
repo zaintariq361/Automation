@@ -29,4 +29,8 @@ async function bootstrap() {
   console.log(`Conviyo API listening on :${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error("Fatal error during bootstrap:", err);
+  process.exit(1);
+});

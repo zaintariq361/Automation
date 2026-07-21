@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback, FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { MessageSender } from "@conviyo/shared";
-import { api } from "../../../../lib/api";
+import { api, ApiError } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth-context";
+import { useToast } from "../../../../lib/toast-context";
 
 interface Message {
   id: string;
@@ -34,6 +35,7 @@ interface ConversationDetail {
 export default function ConversationThreadPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
@@ -47,6 +49,15 @@ export default function ConversationThreadPage() {
     load();
   }, [load]);
 
+  async function runAction(action: () => Promise<unknown>, errorMessage: string) {
+    try {
+      await action();
+      load();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : errorMessage, "error");
+    }
+  }
+
   async function sendReply(e: FormEvent) {
     e.preventDefault();
     if (!reply.trim()) return;
@@ -55,6 +66,8 @@ export default function ConversationThreadPage() {
       await api.post(`/conversations/${id}/messages`, { content: reply });
       setReply("");
       load();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Failed to send message", "error");
     } finally {
       setSending(false);
     }
@@ -63,31 +76,35 @@ export default function ConversationThreadPage() {
   async function addNote(e: FormEvent) {
     e.preventDefault();
     if (!note.trim()) return;
-    await api.post(`/conversations/${id}/notes`, { content: note });
+    await runAction(() => api.post(`/conversations/${id}/notes`, { content: note }), "Failed to add note");
     setNote("");
-    load();
   }
 
   async function toggleAi() {
     if (!conversation) return;
-    await api.patch(`/conversations/${id}/ai-enabled`, { aiEnabled: !conversation.aiEnabled });
-    load();
+    await runAction(
+      () => api.patch(`/conversations/${id}/ai-enabled`, { aiEnabled: !conversation.aiEnabled }),
+      "Failed to update AI setting",
+    );
   }
 
   async function assignToMe() {
     if (!user) return;
-    await api.patch(`/conversations/${id}/assign`, { agentId: user.id });
-    load();
+    await runAction(() => api.patch(`/conversations/${id}/assign`, { agentId: user.id }), "Failed to assign conversation");
+    toast("Assigned to you.", "success");
   }
 
   async function handoff() {
-    await api.post(`/conversations/${id}/handoff`, { note: "Manually handed off from dashboard" });
-    load();
+    await runAction(
+      () => api.post(`/conversations/${id}/handoff`, { note: "Manually handed off from dashboard" }),
+      "Failed to hand off conversation",
+    );
+    toast("Handed off to a human agent.", "success");
   }
 
   async function closeConversation() {
-    await api.patch(`/conversations/${id}/close`, {});
-    load();
+    await runAction(() => api.patch(`/conversations/${id}/close`, {}), "Failed to close conversation");
+    toast("Conversation closed.", "success");
   }
 
   if (!conversation) return <div className="p-8 text-sm text-slate-500">Loading…</div>;

@@ -22,7 +22,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       await signup(companyName, name, email, password);
-      router.push("/inbox");
+      router.push("/onboarding");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Sign up failed");
     } finally {
